@@ -1,106 +1,81 @@
-import os
 import datetime
+import os.path
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-# Este es el permiso estricto solo para leer y editar tus eventos
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
-def obtener_servicio_calendario():
-    """Autentica al usuario y devuelve el servicio de Google Calendar."""
+def obtener_servicio():
     creds = None
-    
-    # El archivo token.json almacena tus tokens de acceso y actualización
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    
-    # Si no hay credenciales válidas disponibles, pide iniciar sesión
+    token_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../token.json'))
+    creds_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../credentials.json'))
+
+    if os.path.exists(token_path) and os.path.getsize(token_path) > 0:
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            # Esto abrirá el navegador para que aceptes
+            flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
             creds = flow.run_local_server(port=0)
-        
-        # Guarda las credenciales para la próxima ejecución
-        with open('token.json', 'w') as token:
+        with open(token_path, 'w') as token:
             token.write(creds.to_json())
-
     return build('calendar', 'v3', credentials=creds)
 
-def agregar_eventos_al_calendario(horario_json):
-    """Recibe la lista de tareas en JSON y las inyecta en el calendario de hoy."""
-    servicio = obtener_servicio_calendario()
+def obtener_eventos_de_hoy():
+    service = obtener_servicio()
+    now = datetime.datetime.utcnow()
+    inicio_dia = datetime.datetime(now.year, now.month, now.day, 0, 0, 0).isoformat() + 'Z'
+    fin_dia = datetime.datetime(now.year, now.month, now.day, 23, 59, 59).isoformat() + 'Z'
+
+    events_result = service.events().list(
+        calendarId='primary', timeMin=inicio_dia, timeMax=fin_dia,
+        singleEvents=True, orderBy='startTime'
+    ).execute()
+    events = events_result.get('items', [])
+
+    if not events:
+        return "No hay eventos agendados para hoy."
+    
+    agenda_texto = ""
+    for event in events:
+        start = event['start'].get('dateTime', event['start'].get('date'))
+        summary = event.get('summary', 'Sin título')
+        agenda_texto += f"- {summary} ({start})\n"
+    return agenda_texto
+
+def agregar_eventos_al_calendario(horario):
+    service = obtener_servicio()
     hoy = datetime.date.today().isoformat()
-    
-    print("Conectando con Google Calendar...")
-    
-    for bloque in horario_json:
-        # Formateamos las horas para cumplir con el estándar ISO que pide Google
-        inicio = f"{hoy}T{bloque['hora_inicio']}:00"
-        fin = f"{hoy}T{bloque['hora_fin']}:00"
-        
+    ids_creados = []
+
+    for tarea in horario:
+        inicio = f"{hoy}T{tarea['hora_inicio']}:00"
+        fin = f"{hoy}T{tarea['hora_fin']}:00"
+
         evento = {
-            'summary': bloque['tarea'],
-            'description': f"Tipo de bloque: {bloque['tipo']}",
-            'start': {
-                'dateTime': inicio,
-                'timeZone': 'Europe/Madrid',
-            },
-            'end': {
-                'dateTime': fin,
-                'timeZone': 'Europe/Madrid',
-            },
+            'summary': f"[{tarea['tipo'].upper()}] {tarea['tarea']}",
+            'description': f"Creado por AI Daily Planner. Tipo: {tarea['tipo']}",
+            'start': {'dateTime': inicio, 'timeZone': 'Europe/Madrid'},
+            'end': {'dateTime': fin, 'timeZone': 'Europe/Madrid'},
         }
 
-        # Insertar el evento en tu calendario principal
-        servicio.events().insert(calendarId='primary', body=evento).execute()
-        print(f"✅ Evento agendado: {bloque['tarea']} ({bloque['hora_inicio']} - {bloque['hora_fin']})")
+        evento_creado = service.events().insert(calendarId='primary', body=evento).execute()
+        # Guardamos el ID que nos devuelve Google Calendar
+        ids_creados.append(evento_creado.get('id'))
+        print(f"✅ Evento creado en Google Calendar: {tarea['tarea']} (ID: {evento_creado.get('id')})")
+        
+    return ids_creados
 
-def obtener_eventos_de_hoy():
-    """Lee tus eventos actuales para pasárselos a Gemini y evitar solapamientos."""
-    servicio = obtener_servicio_calendario()
-    
-    # Calculamos el inicio y fin del día actual para buscar eventos (versión moderna)
-    ahora = datetime.datetime.now(datetime.UTC).isoformat().replace('+00:00', 'Z')
-    fin_dia = (datetime.datetime.now(datetime.UTC).replace(hour=23, minute=59, second=59)).isoformat().replace('+00:00', 'Z')
-    
-    print("Revisando tu agenda actual...")
-    
-    # Pedimos a Google los eventos desde este momento hasta la medianoche
-    eventos_result = servicio.events().list(
-        calendarId='primary', 
-        timeMin=ahora,
-        timeMax=fin_dia,
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
-    
-    eventos = eventos_result.get('items', [])
-    
-    if not eventos:
-        return "No hay eventos programados para el resto del día."
-    
-    agenda = []
-    for evento in eventos:
-        inicio = evento['start'].get('dateTime', evento['start'].get('date'))
-        fin = evento['end'].get('dateTime', evento['end'].get('date'))
-        resumen = evento.get('summary', 'Ocupado')
-        
-        # Limpiamos un poco el formato de la hora para que la IA lo entienda fácil
-        inicio_hora = inicio.split('T')[1][:5] if 'T' in inicio else "Todo el día"
-        fin_hora = fin.split('T')[1][:5] if 'T' in fin else ""
-        
-        agenda.append(f"- {resumen}: {inicio_hora} a {fin_hora}")
-        
-    return "\n".join(agenda)
-
-# --- ZONA DE PRUEBAS ---
-if __name__ == '__main__':
-    # Probamos leer los eventos de hoy
-    mi_agenda = obtener_eventos_de_hoy()
-    print("\n--- LO QUE VE LA IA EN TU CALENDARIO ---")
-    print(mi_agenda)
+def eliminar_evento_calendario(event_id):
+    """Elimina un evento de Google Calendar usando su ID único"""
+    if not event_id:
+        return
+    try:
+        service = obtener_servicio()
+        service.events().delete(calendarId='primary', eventId=event_id).execute()
+        print(f"🗑️ Evento con ID {event_id} eliminado de Google Calendar.")
+    except Exception as e:
+        print(f"⚠️ Error al eliminar evento de Google Calendar: {e}")

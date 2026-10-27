@@ -1,83 +1,52 @@
 import os
 import json
-import time
 from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-def generar_horario_diario(situacion_hoy: str, agenda_actual: str) -> list:
-    """
-    Le pide a Gemini que cree un horario respetando los eventos existentes.
-    Si los servidores fallan por saturación, activa un horario de respaldo automático.
-    """
-    print("🧠 Gemini está pensando tu horario ideal...")
-    
+def generar_horario_diario(contexto_fijo, input_hoy, agenda_actual):
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
+
     prompt = f"""
-    Eres un asistente experto en productividad. Crea un horario para hoy basándote en esta petición del usuario: '{situacion_hoy}'.
+    Eres un asistente de productividad personal.
     
-    REGLA VITAL: El usuario ya tiene estos eventos hoy y NO PUEDES programar nada que se solape con ellos:
+    1. CONTEXTO FIJO DEL USUARIO (Reglas permanentes):
+    {contexto_fijo}
+    
+    2. OBJETIVOS ESPECÍFICOS PARA HOY (Prioridad del día):
+    {input_hoy}
+    
+    3. EVENTOS YA AGENDADOS EN GOOGLE CALENDAR HOY (No solapar):
     {agenda_actual}
     
-    Genera un horario que encaje en los huecos libres. 
-    Devuelve ÚNICAMENTE un arreglo JSON válido con esta estructura exacta, sin texto extra, sin markdown (```json):
+    Genera un horario estructurado para hoy en formato JSON puro.
+    Responde ÚNICAMENTE con una lista JSON válida con esta estructura exacta:
     [
         {{
-            "hora_inicio": "HH:MM",
-            "hora_fin": "HH:MM",
-            "tarea": "Nombre de la tarea",
-            "tipo": "estudio/descanso/trabajo/ejercicio",
+            "hora_inicio": "09:00",
+            "hora_fin": "10:30",
+            "tarea": "Descripción de la tarea",
+            "tipo": "estudio|trabajo|ejercicio|descanso",
             "completado": false
         }}
     ]
-    Usa formato de 24 horas (ej. 14:30).
     """
-    
-    intentos = 2
-    for intento in range(intentos):
-        try:
-            response = client.models.generate_content(
-                model='gemini-3.8-flash',
-                contents=prompt,
-            )
-            
-            texto_limpio = response.text.replace("```json", "").replace("```", "").strip()
-            return json.loads(texto_limpio)
-            
-        except Exception as e:
-            print(f"⚠️ Intento {intento + 1} fallido por saturación. Reintentando...")
-            time.sleep(2)
-            
-    # PLAN DE RESPALDO (Fallback) si Google sigue colapsado
-    print("⚠️ Servidores de Gemini saturados. Activando plan de respaldo inteligente...")
-    horario_emergencia = [
-        {
-            "hora_inicio": "16:00",
-            "hora_fin": "17:30",
-            "tarea": "Bloque de estudio intensivo (Modo Respaldo)",
-            "tipo": "estudio",
-            "completado": False
-        },
-        {
-            "hora_inicio": "17:30",
-            "hora_fin": "18:00",
-            "tarea": "Descanso y estiramientos",
-            "tipo": "descanso",
-            "completado": False
-        },
-        {
-            "hora_inicio": "18:00",
-            "hora_fin": "19:30",
-            "tarea": "Proyecto de programación / Práctica",
-            "tipo": "trabajo",
-            "completado": False
-        }
-    ]
-    return horario_emergencia
 
-if __name__ == "__main__":
-    agenda_falsa = "- Algorítmica: 10:15 a 11:45\n- Comida: 14:00 a 15:00"
-    resultado = generar_horario_diario("Quiero estudiar Python", agenda_falsa)
-    print(json.dumps(resultado, indent=4, ensure_ascii=False))
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        texto = response.text.strip()
+        if texto.startswith("```json"):
+            texto = texto[7:]
+        if texto.startswith("```"):
+            texto = texto[3:]
+        if texto.endswith("```"):
+            texto = texto[:-3]
+        return json.loads(texto.strip())
+    except Exception as e:
+        print(f"⚠️ Error en la API de Gemini: {e}")
+        return []
