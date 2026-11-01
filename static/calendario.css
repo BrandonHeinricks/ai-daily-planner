@@ -1,70 +1,904 @@
-.cal-header {
+/* --- 1. ROMPER LÍMITES DE ANCHO DEL CONTENEDOR PADRE --- */
+body:has(#calendarApp) main,
+body:has(#calendarApp) .container,
+body:has(#calendarApp) .main-content,
+body:has(#calendarApp) .content-wrapper {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* --- 2. DISTRIBUCIÓN DE 2 COLUMNAS (SIDEBAR A LA IZQUIERDA + CALENDARIO LARGO) --- */
+.calendar-page-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 28px;
+    width: calc(100vw - 64px);
+    max-width: 1600px;
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+    box-sizing: border-box;
+}
+
+.calendar-left-sidebar {
+    width: 245px;
+    min-width: 245px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* --- 3. MINICALENDARIO MENSUAL (ARRIBA A LA IZQUIERDA) --- */
+.mini-cal-card {
+    background-color: #ffffff;
+    padding: 8px 4px;
+    user-select: none;
+}
+
+.mini-cal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 14px;
+    padding: 0 6px;
 }
 
-.cal-nav {
-    display: flex;
-    gap: 8px;
-}
-
-.cal-arrow {
-    text-decoration: none;
-    color: #000000;
-    border: 1px solid #cccccc;
-    padding: 4px 12px;
-    border-radius: 6px;
+.mini-cal-title {
+    font-size: 14px;
     font-weight: 600;
+    color: #000000;
 }
 
-.cal-grid {
+.mini-cal-nav {
+    display: flex;
+    gap: 6px;
+}
+
+.mini-nav-btn {
+    background: transparent;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    color: #444444;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.mini-nav-btn:hover {
+    background-color: #f0f0f0;
+    color: #000000;
+}
+
+.mini-cal-weekdays {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 6px;
-    max-width: 420px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 500;
+    color: #5f6368;
+    margin-bottom: 6px;
+}
+
+.mini-cal-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    row-gap: 6px;
     text-align: center;
 }
 
-.cal-dow {
-    font-size: 13px;
-    font-weight: 600;
-    color: #666666;
-    padding-bottom: 8px;
-}
-
-.cal-day {
-    aspect-ratio: 1;
+.mini-day {
+    font-size: 12px;
+    color: #222222;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
+}
+
+.mini-day.other-month {
+    color: #b0b5bc;
+}
+
+.mini-day.is-today-bold {
+    font-weight: 900;
     font-size: 14px;
-}
-
-.cal-day.empty {
-    visibility: hidden;
-}
-
-.cal-day.today {
-    background-color: #cbd5e1;
     color: #000000;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+/* Estilos interactivos para los días del minicalendario mensual */
+.mini-day.clickable {
+    cursor: pointer;
+    border-radius: 50%;
+    transition: background-color 0.15s ease;
+}
+
+.mini-day.clickable:hover {
+    background-color: #f0f0f0;
+}
+
+/* Día seleccionado actualmente en el minicalendario */
+.mini-day.is-selected-day {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+    font-weight: 700;
+    border-radius: 50%;
+}
+
+/* --- 4. SECCIÓN "MIS EVENTOS" Y BOTÓN CIRCULAR (+) --- */
+.mis-eventos-section {
+    display: flex;
+    flex-direction: column;
+    padding: 0 6px;
+}
+
+.mis-eventos-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.mis-eventos-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #000000;
+    margin: 0;
+}
+
+.add-event-circle-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid #000000;
+    background-color: #ffffff;
+    color: #000000;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.add-event-circle-btn:hover {
+    background-color: #000000;
+    color: #ffffff;
+}
+
+.mis-eventos-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.evento-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1.5px solid #000000;
+    border-radius: 10px;
+    background-color: #ffffff;
+    font-size: 12px;
+}
+
+.evento-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex: 1;
+    overflow: hidden;
+    gap: 8px;
+}
+
+.evento-name {
+    font-weight: 600;
+    color: #000000;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.evento-date {
+    font-size: 11px;
+    color: #555555;
+    white-space: nowrap;
+}
+
+.evento-del-mini {
+    background: transparent;
+    border: none;
+    color: #888888;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.evento-del-mini:hover {
+    color: #000000;
+    background-color: #f0f0f0;
+}
+
+.evento-empty {
+    font-size: 12px;
+    color: #777777;
+}
+
+.more-events-dots {
+    margin-top: 10px;
+    align-self: center;
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    letter-spacing: 3px;
+    color: #000000;
+    cursor: pointer;
+    padding: 2px 14px;
+    border-radius: 999px;
+    transition: background-color 0.15s ease;
+}
+
+.more-events-dots:hover {
+    background-color: #f0f0f0;
+}
+
+/* --- 5. CONTENEDOR PRINCIPAL DEL CALENDARIO (DERECHA) --- */
+.calendar-wrapper {
+    flex: 1;
+    width: 100%;
+    max-width: none !important;
+    background-color: #ffffff;
+    padding: 15px 0 0 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 78vh;
+    margin-bottom: 0;
+}
+
+/* --- 6. TOOLBAR Y TOGGLE SWITCH --- */
+.cal-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 24px 15px 24px;
+    border-bottom: 1px solid #d0d5dd;
+}
+
+.cal-date-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #000000;
+}
+
+.view-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #666;
+}
+
+.view-toggle span.active {
+    color: #000;
     font-weight: 700;
 }
 
-.agenda-box {
-    margin-top: 30px;
-    padding-top: 20px;
-    border-top: 1px solid #eeeeee;
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 22px;
 }
 
-.agenda-pre {
-    margin-top: 10px;
-    background: #f8f8f8;
-    padding: 14px;
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #d1d5db;
+    border-radius: 34px;
+    transition: .3s;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 4px;
+    bottom: 4px;
+    background-color: #000000;
+    border-radius: 50%;
+    transition: .3s;
+}
+
+input:checked + .slider {
+    background-color: #9ca3af;
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+/* --- 7. CABECERA DE DÍAS (X-AXIS) --- */
+.cal-header-grid {
+    display: flex;
+    padding-right: 15px;
+    border-bottom: 1px solid #d0d5dd;
+}
+
+.gmt-label {
+    width: 60px;
+    min-width: 60px;
+}
+
+.day-header {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 0;
+    border-left: 1px solid #d0d5dd;
+}
+
+.day-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: #5f6368;
+    margin-bottom: 4px;
+}
+
+.day-number {
+    font-size: 22px;
+    color: #3c4043;
+}
+
+.current-day-circle {
+    background-color: transparent !important;
+    color: #000000 !important;
+    width: auto !important;
+    height: auto !important;
+    border-radius: 0 !important;
+    display: block !important;
+    font-weight: 800 !important;
+    font-size: 24px !important;
+}
+
+/* --- 8. CUERPO DEL CALENDARIO (Y-AXIS) --- */
+.cal-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    position: relative;
+}
+
+.cal-body-grid {
+    display: flex;
+    height: 1440px;
+    position: relative;
+}
+
+.time-labels {
+    width: 60px;
+    min-width: 60px;
+    position: relative;
+}
+
+.time-slot-label {
+    height: 60px;
+    position: relative;
+}
+
+.time-slot-label span {
+    position: absolute;
+    top: -8px;
+    right: 12px;
+    font-size: 11px;
+    color: #5f6368;
+}
+
+.time-slot-label:first-child span {
+    display: none !important;
+}
+
+.days-container {
+    flex: 1;
+    display: flex;
+    position: relative;
+}
+
+.day-column {
+    flex: 1;
+    border-left: 1px solid #d0d5dd;
+    position: relative;
+}
+
+.grid-cell {
+    height: 60px;
+    border-bottom: 1px solid #ebeef2;
+    box-sizing: border-box;
+}
+
+/* --- 9. LÍNEA Y PUNTO DE HORA ACTUAL EN NEGRO --- */
+.current-time-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: #000000;
+    z-index: 10;
+    pointer-events: none;
+}
+
+.current-time-line::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: -4px;
+    width: 10px;
+    height: 10px;
+    background-color: #000000;
+    border-radius: 50%;
+}
+
+/* --- 10. BLOQUES DE TAREAS Y EVENTOS INMUTABLES --- */
+.task-block {
+    position: absolute;
+    left: 4%;
+    width: 92%;
+    background-color: #ffffff;
+    border: 2.5px solid #000000;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: #000000;
+    overflow: hidden;
+    box-sizing: border-box;
+    z-index: 5;
+    box-shadow: 2px 2px 0px rgba(0,0,0,0.1);
+    cursor: grab;
+    transition: box-shadow 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.task-block.event-immutable {
+    background-color: #f3f4f6;
+    border: 2.5px solid #000000;
+    cursor: default !important;
+}
+
+.task-block.is-tiny * {
+    display: none !important;
+}
+
+.task-block.dragging {
+    cursor: grabbing;
+    z-index: 20;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+    opacity: 0.95;
+}
+
+.task-block strong {
+    display: block;
+    margin-bottom: 2px;
+}
+
+.task-type-badge {
+    display: inline-block;
+    margin-top: 2px;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #555;
+}
+
+.task-block.completed {
+    text-decoration: line-through;
+    color: #777777;
+    border-color: #777777;
+    background-color: #fafafa;
+}
+
+/* --- 11. SELECCIÓN DE ÁREA CON CLIC DERECHO --- */
+.windows-selection-box {
+    position: absolute;
+    left: 4%;
+    width: 92%;
+    background-color: rgba(0, 0, 0, 0.06);
+    border: 1.5px solid rgba(0, 0, 0, 0.7);
+    border-radius: 4px;
+    z-index: 15;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #000000;
+}
+
+/* --- 12. OVERLAY BORROSO Y MODALES DE TAREAS --- */
+.blur-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+}
+
+.blur-overlay.active {
+    display: flex;
+}
+
+.sketch-modal-card {
+    background-color: #ffffff;
+    border: 2px solid #000000;
+    border-radius: 16px;
+    padding: 30px 36px;
+    width: 560px;
+    max-width: 92%;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+}
+
+.sketch-modal-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.sketch-pill-input {
+    flex: 1.4;
+    border: 2px solid #000000;
+    border-radius: 999px;
+    padding: 12px 24px;
+    font-size: 16px;
+    color: #000000;
+    background-color: #ffffff;
+    outline: none;
+}
+
+.sketch-pill-input::placeholder {
+    color: #666666;
+}
+
+.sketch-select-wrapper {
+    flex: 0.8;
+    position: relative;
+}
+
+.sketch-select {
+    width: 100%;
+    border: 2px solid #000000;
     border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 16px;
+    color: #000000;
+    background-color: #ffffff;
+    outline: none;
+    cursor: pointer;
+}
+
+.sketch-edit-card {
+    background-color: #ffffff;
+    border: 2px solid #000000;
+    border-radius: 18px;
+    padding: 28px 34px 24px 34px;
+    width: 490px;
+    min-height: 390px;
+    max-width: 94%;
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.14);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.sketch-edit-card form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    justify-content: space-between;
+}
+
+.sketch-edit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+}
+
+.sketch-edit-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #000000;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 330px;
+}
+
+.sketch-check-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+}
+
+.sketch-checkbox {
+    width: 20px;
+    height: 20px;
+    accent-color: #000000;
+    cursor: pointer;
+}
+
+.sketch-divider {
+    border: none;
+    border-top: 2px solid #000000;
+    margin: 0 -10px 26px -10px;
+}
+
+.edit-middle-row {
+    margin-bottom: 34px;
+}
+
+.sketch-time-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 28px;
+    margin-bottom: 24px;
+}
+
+.sketch-time-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.sketch-time-group label {
+    font-size: 16px;
+    color: #000000;
+}
+
+.sketch-time-pill {
+    width: 125px;
+    border: 2px solid #000000;
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-size: 16px;
+    text-align: center;
+    color: #000000;
+    background-color: #ffffff;
+    outline: none;
+}
+
+.sketch-edit-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 36px;
+}
+
+.sketch-error-msg {
+    font-size: 12px;
+    color: #d92d20;
+    font-weight: 500;
+}
+
+.sketch-trash-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.sketch-trash-btn:hover {
+    background-color: #f2f2f2;
+    transform: scale(1.06);
+}
+
+/* --- 13. MODAL DE CREAR EVENTO FIJO (+) Y MODAL DE LISTA EXTENSA (•••) --- */
+.sketch-event-create-card {
+    background-color: #ffffff;
+    border: 2px solid #000000;
+    border-radius: 18px;
+    padding: 26px 36px 24px 36px;
+    width: 540px;
+    max-width: 94%;
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.14);
+}
+
+.event-top-name-wrap {
+    display: flex;
+    justify-content: center;
+    padding-bottom: 8px;
+}
+
+.event-top-name-input {
+    width: 100%;
+    border: none;
+    outline: none;
+    font-size: 24px;
+    font-weight: 600;
+    text-align: center;
+    color: #000000;
+    background: transparent;
+}
+
+.event-top-name-input::placeholder {
+    color: #555555;
+}
+
+.event-body-grid {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 28px;
+    margin-top: 10px;
+}
+
+.event-left-times {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1.1;
+}
+
+.event-time-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.event-time-line label {
+    font-size: 17px;
+    font-weight: 500;
+    color: #000000;
+}
+
+.sketch-date-pill {
+    width: 145px;
+    border: 2px solid #000000;
+    border-radius: 999px;
+    padding: 8px 12px;
     font-size: 13px;
-    white-space: pre-wrap;
-    font-family: inherit;
+    text-align: center;
+    color: #000000;
+    background-color: #ffffff;
+    outline: none;
+}
+
+.event-right-repeat {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    padding-bottom: 4px;
+}
+
+.repeat-label {
+    font-size: 17px;
+    font-weight: 500;
+    color: #000000;
+    white-space: nowrap;
+}
+
+.repeat-select {
+    flex: 1;
+}
+
+.sketch-save-pill-btn {
+    background-color: #000000;
+    color: #ffffff;
+    border: none;
+    border-radius: 999px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.sketch-save-pill-btn:hover {
+    opacity: 0.85;
+}
+
+.sketch-events-modal-card {
+    background-color: #ffffff;
+    border: 2px solid #000000;
+    border-radius: 18px;
+    padding: 26px 32px;
+    width: 480px;
+    max-height: 70vh;
+    max-width: 92%;
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.14);
+    display: flex;
+    flex-direction: column;
+}
+
+.sketch-close-btn {
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    color: #000000;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
+.sketch-close-btn:hover {
+    background-color: #f0f0f0;
+}
+
+.all-events-scroll-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+.all-events-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border: 2px solid #000000;
+    border-radius: 12px;
+    background-color: #ffffff;
+}
+
+.all-events-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.all-events-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #000000;
+}
+
+.all-events-date {
+    font-size: 13px;
+    color: #444444;
+    font-weight: 500;
 }
