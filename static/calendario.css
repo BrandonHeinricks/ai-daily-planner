@@ -902,3 +902,45 @@ input:checked + .slider:before {
     color: #444444;
     font-weight: 500;
 }
+
+/* ==========================================
+   ESTILO PÍLDORA MINIMALISTA PARA DROPDOWNS
+   ========================================== */
+
+#inputTaskType,
+#modalTaskType,
+.task-modal select,
+.modal-content select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-color: #ffffff;
+    border: 1.8px solid #000000;
+    border-radius: 999px;
+    padding: 10px 38px 10px 18px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #111111;
+    cursor: pointer;
+    outline: none;
+    height: 44px;
+    min-width: 135px;
+    box-sizing: border-box;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+
+    /* Flecha minimalista en negro a la derecha */
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 15px;
+}
+
+#inputTaskType:hover,
+#modalTaskType:hover {
+    background-color: #f8f9fa;
+}
+
+#inputTaskType:focus,
+#modalTaskType:focus {
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
+}

@@ -1,3 +1,7 @@
+# ==========================================
+# IMPORTACIONES Y CONFIGURACIÓN
+# ==========================================
+
 import os
 import json
 import uuid
@@ -10,6 +14,8 @@ CONTEXT_FILE = os.path.join(DATA_DIR, 'context.json')
 EVENTS_FILE = os.path.join(DATA_DIR, 'events.json')
 
 TAREAS_HOY = []
+PROMPTS_HOY = []
+FECHA_TAREAS_HOY = datetime.date.today().isoformat()
 
 EVENTOS_INICIALES = [
     {
@@ -41,6 +47,11 @@ EVENTOS_INICIALES = [
     }
 ]
 
+
+# ==========================================
+# INICIALIZACIÓN DE ARCHIVOS Y CAMBIO DE DÍA
+# ==========================================
+
 def asegurar_archivos():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
@@ -54,7 +65,77 @@ def asegurar_archivos():
         with open(EVENTS_FILE, 'w', encoding='utf-8') as f:
             json.dump(EVENTOS_INICIALES, f, ensure_ascii=False, indent=4)
 
-asegurar_archivos()
+
+def _leer_historial_disco():
+    try:
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            for k, v in data.items():
+                if isinstance(v, (int, float)):
+                    data[k] = {"score": v, "tareas": [], "prompts": []}
+                elif isinstance(v, dict) and "prompts" not in v:
+                    v["prompts"] = []
+            return data
+    except Exception:
+        return {}
+
+
+def verificar_cambio_de_dia():
+    global TAREAS_HOY, PROMPTS_HOY, FECHA_TAREAS_HOY
+    hoy_str = datetime.date.today().isoformat()
+    if FECHA_TAREAS_HOY != hoy_str:
+        historial = _leer_historial_disco()
+        info_hoy = historial.get(hoy_str, {})
+        TAREAS_HOY[:] = info_hoy.get("tareas", [])
+        PROMPTS_HOY[:] = info_hoy.get("prompts", [])
+        FECHA_TAREAS_HOY = hoy_str
+
+
+def inicializar_tareas_hoy():
+    global TAREAS_HOY, PROMPTS_HOY, FECHA_TAREAS_HOY
+    hoy_str = datetime.date.today().isoformat()
+    FECHA_TAREAS_HOY = hoy_str
+    historial = _leer_historial_disco()
+    if hoy_str in historial:
+        TAREAS_HOY[:] = historial[hoy_str].get("tareas", [])
+        PROMPTS_HOY[:] = historial[hoy_str].get("prompts", [])
+    else:
+        TAREAS_HOY[:] = []
+        PROMPTS_HOY[:] = []
+
+
+# ==========================================
+# MEMORIA DIARIA DE PROMPTS (SE REINICIA AL DÍA)
+# ==========================================
+
+def registrar_prompt_hoy(texto_prompt):
+    global PROMPTS_HOY
+    verificar_cambio_de_dia()
+    texto_limpio = texto_prompt.strip()
+    if not texto_limpio:
+        return
+
+    hora_envio = datetime.datetime.now().strftime("%H:%M")
+    entrada = f"[{hora_envio}] {texto_limpio}"
+    PROMPTS_HOY.append(entrada)
+
+    hoy_str = datetime.date.today().isoformat()
+    historial = _leer_historial_disco()
+    if hoy_str not in historial:
+        historial[hoy_str] = {"score": 0, "tareas": TAREAS_HOY, "prompts": PROMPTS_HOY}
+    else:
+        historial[hoy_str]["prompts"] = PROMPTS_HOY
+    guardar_historial(historial)
+
+
+def obtener_prompts_acumulados():
+    verificar_cambio_de_dia()
+    return list(PROMPTS_HOY)
+
+
+# ==========================================
+# MANEJO DE CONTEXTO FIJO
+# ==========================================
 
 def cargar_contexto():
     try:
@@ -63,27 +144,72 @@ def cargar_contexto():
     except Exception:
         return ""
 
+
 def guardar_contexto_txt(texto):
     with open(CONTEXT_FILE, 'w', encoding='utf-8') as f:
         json.dump({"contexto": texto}, f, ensure_ascii=False, indent=4)
 
+
+# ==========================================
+# MANEJO DE HISTORIAL Y RENDIMIENTO
+# ==========================================
+
 def cargar_historial():
-    try:
-        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            for k, v in data.items():
-                if isinstance(v, (int, float)):
-                    data[k] = {"score": v, "tareas": []}
-            return data
-    except Exception:
-        return {}
+    verificar_cambio_de_dia()
+    return _leer_historial_disco()
+
 
 def guardar_historial(historial):
     with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(historial, f, ensure_ascii=False, indent=4)
 
+
+def recalcular_rendimiento():
+    verificar_cambio_de_dia()
+    total = len(TAREAS_HOY)
+    hoy_str = datetime.date.today().isoformat()
+    historial = _leer_historial_disco()
+    prompts_guardados = historial.get(hoy_str, {}).get("prompts", PROMPTS_HOY)
+
+    if total > 0:
+        completadas = sum(1 for t in TAREAS_HOY if t.get("completado"))
+        porcentaje = completadas / total
+        historial[hoy_str] = {
+            "score": porcentaje,
+            "tareas": TAREAS_HOY,
+            "prompts": prompts_guardados
+        }
+    else:
+        if prompts_guardados:
+            historial[hoy_str] = {
+                "score": 0,
+                "tareas": [],
+                "prompts": prompts_guardados
+            }
+        elif hoy_str in historial:
+            del historial[hoy_str]
+    guardar_historial(historial)
+
+
+def recalcular_dia_historial(fecha_iso, historial):
+    if fecha_iso not in historial:
+        return
+    tareas_dia = historial[fecha_iso].get("tareas", [])
+    prompts_dia = historial[fecha_iso].get("prompts", [])
+    if tareas_dia:
+        completadas = sum(1 for t in tareas_dia if t.get("completado"))
+        historial[fecha_iso]["score"] = completadas / len(tareas_dia)
+    elif not prompts_dia:
+        del historial[fecha_iso]
+    else:
+        historial[fecha_iso]["score"] = 0
+
+
+# ==========================================
+# MANEJO DE EVENTOS FIJOS
+# ==========================================
+
 def cargar_eventos_raw():
-    """Carga la lista de eventos asegurando que todos tengan los campos necesarios."""
     try:
         with open(EVENTS_FILE, 'r', encoding='utf-8') as f:
             eventos = json.load(f)
@@ -112,12 +238,13 @@ def cargar_eventos_raw():
         guardar_eventos_raw(eventos)
     return eventos
 
+
 def guardar_eventos_raw(eventos):
     with open(EVENTS_FILE, 'w', encoding='utf-8') as f:
         json.dump(eventos, f, ensure_ascii=False, indent=4)
 
+
 def evento_ocurre_en_fecha(ev, target_date):
-    """Determina si un evento (según su regla de repetición) ocurre en target_date."""
     try:
         ev_date = datetime.date.fromisoformat(ev.get("fecha", ""))
     except Exception:
@@ -137,8 +264,8 @@ def evento_ocurre_en_fecha(ev, target_date):
         return target_date >= ev_date and (target_date.month == ev_date.month and target_date.day == ev_date.day)
     return False
 
+
 def _proxima_ocurrencia(ev, hoy_date):
-    """Calcula la fecha más próxima en la que ocurrirá el evento a partir de hoy."""
     try:
         ev_date = datetime.date.fromisoformat(ev.get("fecha", ""))
     except Exception:
@@ -178,8 +305,8 @@ def _proxima_ocurrencia(ev, hoy_date):
                 return cand
     return None
 
+
 def cargar_eventos():
-    """Devuelve los eventos activos ordenados por su próxima aparición."""
     eventos = cargar_eventos_raw()
     hoy_date = datetime.date.today()
     resultado = []
@@ -194,8 +321,8 @@ def cargar_eventos():
     resultado.sort(key=lambda x: (x["proxima_fecha"], x.get("hora_inicio", "00:00")))
     return resultado
 
+
 def obtener_eventos_del_dia(fecha_iso):
-    """Devuelve todos los eventos fijos/repetitivos que caen en una fecha concreta (YYYY-MM-DD)."""
     try:
         target_date = datetime.date.fromisoformat(fecha_iso)
     except Exception:
@@ -219,12 +346,8 @@ def obtener_eventos_del_dia(fecha_iso):
     del_dia.sort(key=lambda x: x["hora_inicio"])
     return del_dia
 
+
 def obtener_contexto_eventos_ia(fecha_iso=None):
-    """
-    Texto estructurado para inyectar en el prompt de Gemini:
-    Informa de los eventos inmutables del día (citas, cumpleaños, hora de dormir)
-    para que la IA no asigne tareas en esas horas ni después de la hora de dormir.
-    """
     if not fecha_iso:
         fecha_iso = datetime.date.today().isoformat()
     eventos_hoy = obtener_eventos_del_dia(fecha_iso)
@@ -236,29 +359,49 @@ def obtener_contexto_eventos_ia(fecha_iso=None):
         lineas.append(f"- {ev['hora_inicio']} a {ev['hora_fin']}: {ev['tarea']} (Inmutable)")
     return "\n".join(lineas)
 
-def recalcular_rendimiento():
-    global TAREAS_HOY
-    total = len(TAREAS_HOY)
-    hoy_str = datetime.date.today().isoformat()
-    historial = cargar_historial()
-    
-    if total > 0:
-        completadas = sum(1 for t in TAREAS_HOY if t.get("completado"))
-        porcentaje = completadas / total
-        historial[hoy_str] = {
-            "score": porcentaje,
-            "tareas": TAREAS_HOY
-        }
-    else:
-        if hoy_str in historial:
-            del historial[hoy_str]
-    guardar_historial(historial)
 
-def inicializar_tareas_hoy():
-    global TAREAS_HOY
-    hoy_str = datetime.date.today().isoformat()
-    historial = cargar_historial()
-    if hoy_str in historial and "tareas" in historial[hoy_str]:
-        TAREAS_HOY = historial[hoy_str]["tareas"]
+# ==========================================
+# ESTADÍSTICAS Y CONTRIBUCIONES
+# ==========================================
 
+def obtener_datos_stats(anio_seleccionado=None):
+    historial = cargar_historial()
+    hoy = datetime.date.today()
+
+    if not anio_seleccionado:
+        anio_seleccionado = hoy.year
+
+    anios_disponibles = set([hoy.year])
+    for fecha_iso in historial.keys():
+        try:
+            d = datetime.date.fromisoformat(fecha_iso)
+            anios_disponibles.add(d.year)
+        except Exception:
+            pass
+
+    lista_anios = sorted(list(anios_disponibles), reverse=True)
+
+    total_contribuciones = 0
+    matriz_dias = {}
+
+    for fecha_iso, data in historial.items():
+        try:
+            d = datetime.date.fromisoformat(fecha_iso)
+            if d.year == anio_seleccionado:
+                score = data.get("score", 0)
+                if score > 0:
+                    total_contribuciones += 1
+                    matriz_dias[fecha_iso] = score
+        except Exception:
+            pass
+
+    return {
+        "total": total_contribuciones,
+        "anio_actual": anio_seleccionado,
+        "anios_disponibles": lista_anios,
+        "matriz_dias": matriz_dias
+    }
+
+
+asegurar_archivos()
 inicializar_tareas_hoy()

@@ -1,19 +1,3 @@
-from flask import Blueprint, render_template_string, request, jsonify
-import datetime
-import uuid
-import storage
-from ui import render_layout
-from calendar_service import (
-    agregar_eventos_al_calendario,
-    agregar_evento_fijo_calendario,
-    actualizar_evento_calendario,
-    eliminar_evento_calendario,
-    sincronizar_semana_con_google
-)
-
-calendario_bp = Blueprint('calendario', __name__)
-
-CALENDARIO_HTML = """
 <div class="calendar-page-layout" id="calendarApp">
 
     <!-- COLUMNA IZQUIERDA: Minicalendario + Mis Eventos -->
@@ -143,27 +127,31 @@ CALENDARIO_HTML = """
 
 </div>
 
-<!-- Modales -->
-<div id="creationModalOverlay" class="blur-overlay">
+<!-- Modal minimalista para CREAR tarea (Clic derecho en vista diaria) -->
+<div id="creationModalOverlay" class="blur-overlay" onclick="if(event.target === this) cerrarModalCreacionManual();">
     <div class="sketch-modal-card">
         <form id="createTaskForm" onsubmit="confirmarNuevaTarea(event)">
             <div class="sketch-modal-row">
                 <input type="text" id="inputTaskName" class="sketch-pill-input" placeholder="nombre:" required autocomplete="off">
+                
                 <div class="sketch-select-wrapper">
-                    <select id="inputTaskType" class="sketch-select">
-                        <option value="estudio" selected>Tipo</option>
-                        <option value="estudio">Estudio</option>
-                        <option value="trabajo">Trabajo</option>
-                        <option value="gym">Gym</option>
+                    <select id="inputTaskType">
+                        <option value="carrera">Carrera</option>
+                        <option value="propios">Propios</option>
+                        <option value="salud">Salud</option>
+                        <option value="descanso">Descanso</option>
                     </select>
                 </div>
             </div>
-            <button type="submit" style="display:none;"></button>
+            <div style="text-align: right; margin-top: 15px;">
+                <button type="submit" class="sketch-save-pill-btn">Guardar</button>
+            </div>
         </form>
     </div>
 </div>
 
-<div id="editModalOverlay" class="blur-overlay">
+<!-- Modal casi cuadrado para EDITAR tarea (Doble clic izquierdo) -->
+<div id="editModalOverlay" class="blur-overlay" onclick="if(event.target === this) guardarEdicionTarea();">
     <div class="sketch-edit-card">
         <form id="editTaskForm" onsubmit="guardarEdicionTarea(event)">
             <div class="sketch-edit-header">
@@ -174,17 +162,21 @@ CALENDARIO_HTML = """
                 </label>
             </div>
             <hr class="sketch-divider">
+
             <div class="sketch-modal-row edit-middle-row">
                 <input type="text" id="editTaskName" class="sketch-pill-input" placeholder="nombre" required autocomplete="off"
                        oninput="document.getElementById('editHeaderTitle').innerText = this.value || 'Tarea'">
+                
                 <div class="sketch-select-wrapper">
                     <select id="editTaskType" class="sketch-select">
-                        <option value="estudio">Estudio</option>
-                        <option value="trabajo">Trabajo</option>
-                        <option value="gym">Gym</option>
+                        <option value="carrera">Carrera</option>
+                        <option value="propios">Propios</option>
+                        <option value="salud">Salud</option>
+                        <option value="descanso">Descanso</option>
                     </select>
                 </div>
             </div>
+
             <div class="sketch-time-row">
                 <div class="sketch-time-group">
                     <label for="editTaskStart">inicio:</label>
@@ -195,16 +187,21 @@ CALENDARIO_HTML = """
                     <input type="text" id="editTaskFin" class="sketch-time-pill" placeholder="10:30" maxlength="5" required>
                 </div>
             </div>
+
             <div class="sketch-edit-footer">
                 <span id="editErrorMsg" class="sketch-error-msg"></span>
-                <button type="button" class="sketch-trash-btn" onclick="eliminarTareaActual()" title="Eliminar tarea">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="3 6 5 6 21 6"></polyline>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                    </svg>
-                </button>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button type="button" class="sketch-trash-btn" onclick="eliminarTareaActual()" title="Eliminar tarea">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            <line x1="10" y1="11" x2="10" y2="17"></line>
+                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                        </svg>
+                    </button>
+                    <button type="submit" class="sketch-save-pill-btn">Guardar</button>
+                </div>
             </div>
-            <button type="submit" style="display:none;"></button>
         </form>
     </div>
 </div>
@@ -276,14 +273,53 @@ CALENDARIO_HTML = """
     </div>
 </div>
 
+<!-- Modal de solo lectura para visualizar Eventos Fijos (Doble clic) -->
+<div id="viewEventModalOverlay" class="blur-overlay" onclick="if(event.target === this) cerrarModalVerEvento();">
+    <div class="sketch-edit-card">
+        <div class="sketch-edit-header">
+            <h3 id="viewEventTitle" class="sketch-edit-title">Evento</h3>
+            <span class="evento-date" id="viewEventRepeatBadge" style="font-weight: 600;"></span>
+        </div>
+        <hr class="sketch-divider">
+
+        <div class="sketch-modal-row edit-middle-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+            <div style="font-size: 14px; color: #555;">Fecha: <strong id="viewEventDateVal" style="color: #000;"></strong></div>
+            <div style="font-size: 14px; color: #555;">Horario: <strong id="viewEventTimeVal" style="color: #000;"></strong></div>
+        </div>
+
+        <div class="sketch-edit-footer" style="justify-content: flex-end;">
+            <button type="button" class="sketch-save-pill-btn" onclick="cerrarModalVerEvento()">Cerrar</button>
+        </div>
+    </div>
+</div>
+
 <script>
+    function abrirModalVerEvento(block) {
+        const title = block.dataset.title || 'Evento';
+        const start = block.dataset.start || '';
+        const end = block.dataset.end || '';
+        const column = block.closest('.day-column');
+        const fecha = column ? column.dataset.date : '';
+
+        document.getElementById('viewEventTitle').innerText = title;
+        document.getElementById('viewEventDateVal').innerText = fecha;
+        document.getElementById('viewEventTimeVal').innerText = `${start} - ${end}`;
+        document.getElementById('viewEventRepeatBadge').innerText = 'EVENTO FIJO (Inmutable)';
+
+        document.getElementById('viewEventModalOverlay').classList.add('active');
+    }
+
+    function cerrarModalVerEvento() {
+        document.getElementById('viewEventModalOverlay').classList.remove('active');
+    }
+
     const MESES_NOMBRES = [
         "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
         "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
     ];
     
-    let miniYear = {{ anio_actual }};
-    let miniMonth = {{ mes_num - 1 }};
+    let miniYear = Number("{{ anio_actual }}");
+    let miniMonth = Number("{{ mes_num - 1 }}");
     let fechaSeleccionadaIso = "{{ hoy_iso }}";
 
     function renderMiniCalendar() {
@@ -298,7 +334,6 @@ CALENDARIO_HTML = """
         const daysInMonth = new Date(miniYear, miniMonth + 1, 0).getDate();
         const daysInPrevMonth = new Date(miniYear, miniMonth, 0).getDate();
 
-        // Días mes anterior (inactivos o navegan al mes)
         for (let i = firstDayWeek - 1; i >= 0; i--) {
             const span = document.createElement('span');
             span.className = 'mini-day other-month';
@@ -306,7 +341,6 @@ CALENDARIO_HTML = """
             daysContainer.appendChild(span);
         }
 
-        // Días mes actual (CLICABLES)
         for (let d = 1; d <= daysInMonth; d++) {
             const span = document.createElement('span');
             span.className = 'mini-day clickable';
@@ -343,7 +377,6 @@ CALENDARIO_HTML = """
         fechaSeleccionadaIso = isoStr;
         renderMiniCalendar();
 
-        // Forzar vista Diaria automáticamente al hacer clic en un día del minicalendario
         const toggleBtn = document.getElementById('toggleViewBtn');
         if (toggleBtn && !toggleBtn.checked) {
             toggleBtn.checked = true;
@@ -430,7 +463,7 @@ CALENDARIO_HTML = """
     }
 
     function timeStrToMin(str) {
-        const match = (str || '').trim().match(/^([01]?\\d|2[0-3]):([0-5]\\d)$/);
+        const match = (str || '').trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
         return match ? parseInt(match[1], 10) * 60 + parseInt(match[2], 10) : null;
     }
 
@@ -512,7 +545,6 @@ CALENDARIO_HTML = """
             const daysContainer = document.getElementById('daysContainerMain');
             const headerGrid = document.getElementById('calHeaderGrid');
             
-            // Reconstruir cabeceras y columnas con la nueva semana centrada en el día pinchado
             headerGrid.innerHTML = '<div class="gmt-label"></div>';
             daysContainer.innerHTML = '<div class="current-time-line" style="top: ' + (data.linea_roja_top || 0) + 'px;"></div>';
 
@@ -572,7 +604,6 @@ CALENDARIO_HTML = """
         }
     }
 
-    // Funciones de interacción de bloques y creación con clic derecho
     let draggingBlock = null;
     let dragStartY = 0;
     let blockInitialTop = 0;
@@ -584,7 +615,13 @@ CALENDARIO_HTML = """
             if (block.dataset.initialized) return;
             block.dataset.initialized = "true";
 
-            if (block.dataset.esEvento === 'true' || block.classList.contains('event-immutable')) return;
+            if (block.dataset.esEvento === 'true' || block.classList.contains('event-immutable')) {
+                block.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    abrirModalVerEvento(block);
+                });
+                return;
+            }
 
             block.addEventListener('mousedown', (e) => {
                 if (e.button !== 0) return;
@@ -750,25 +787,58 @@ CALENDARIO_HTML = """
 
     function abrirModalCreacion() {
         const overlay = document.getElementById('creationModalOverlay');
+        const inputName = document.getElementById('inputTaskName');
+        const selectType = document.getElementById('inputTaskType');
+        
         overlay.classList.add('active');
-        document.getElementById('inputTaskName').value = '';
-        document.getElementById('inputTaskType').selectedIndex = 0;
-        document.getElementById('inputTaskName').focus();
+        inputName.value = '';
+        selectType.selectedIndex = 0;
+        
+        inputName.focus();
+        requestAnimationFrame(() => inputName.focus());
     }
-    function cerrarModalCreacion() { document.getElementById('creationModalOverlay').classList.remove('active'); if (selectionGhost) { selectionGhost.remove(); selectionGhost = null; } }
+    function cerrarModalCreacion() {
+        document.getElementById('creationModalOverlay').classList.remove('active');
+        if (selectionGhost) {
+            selectionGhost.remove();
+            selectionGhost = null;
+        }
+    }
+    function cerrarModalCreacionManual() {
+        const nombre = document.getElementById('inputTaskName').value.trim();
+        if (nombre) {
+            confirmarNuevaTarea();
+        } else {
+            cerrarModalCreacion();
+        }
+    }
 
     async function confirmarNuevaTarea(e) {
         if (e) e.preventDefault();
         const nombre = document.getElementById('inputTaskName').value.trim();
-        const tipo = document.getElementById('inputTaskType').value || 'estudio';
+        const tipo = document.getElementById('inputTaskType').value || 'carrera';
         if (!nombre) return;
+
+        const hora_inicio = minToTimeStr(pendingTaskData.top);
+        const hora_fin = minToTimeStr(pendingTaskData.top + pendingTaskData.height);
+
         cerrarModalCreacion();
-        await fetch('/calendario/crear_tarea', {
+
+        const res = await fetch('/calendario/crear_tarea', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fecha_iso: pendingTaskData.fecha_iso, hora_inicio: minToTimeStr(pendingTaskData.top), hora_fin: minToTimeStr(pendingTaskData.top + pendingTaskData.height), tarea: nombre, tipo })
+            body: JSON.stringify({
+                fecha_iso: pendingTaskData.fecha_iso,
+                hora_inicio: hora_inicio,
+                hora_fin: hora_fin,
+                tarea: nombre,
+                tipo: tipo
+            })
         });
-        await sincronizarEnSegundoPlano(fechaSeleccionadaIso);
+
+        if (res.ok) {
+            await sincronizarEnSegundoPlano(fechaSeleccionadaIso);
+        }
     }
 
     let activeEditBlock = null;
@@ -779,7 +849,7 @@ CALENDARIO_HTML = """
         activeEditColumn = block.closest('.day-column');
         document.getElementById('editHeaderTitle').innerText = block.dataset.title || 'Tarea';
         document.getElementById('editTaskName').value = block.dataset.title || '';
-        document.getElementById('editTaskType').value = block.dataset.type || 'estudio';
+        document.getElementById('editTaskType').value = block.dataset.type || 'Carrera';
         document.getElementById('editTaskStart').value = block.dataset.start || '09:00';
         document.getElementById('editTaskFin').value = block.dataset.end || '10:00';
         document.getElementById('editTaskCompleted').checked = (block.dataset.completed === 'true');
@@ -841,344 +911,8 @@ CALENDARIO_HTML = """
         });
 
         const scrollArea = document.getElementById('calScrollArea');
-        const redLineTop = {{ linea_roja_top }};
+        const redLineTop = Number("{{ linea_roja_top }}");
         if (scrollArea) scrollArea.scrollTop = Math.max(0, redLineTop - (scrollArea.clientHeight / 2));
         setInterval(() => sincronizarEnSegundoPlano(fechaSeleccionadaIso), 15000);
     });
 </script>
-"""
-def _formatear_eventos_para_vista():
-    meses_cortos = ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
-    meses_largos = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    mapa_repite = {
-        "none": "Una vez",
-        "daily": "Diario",
-        "weekly": "Semanal",
-        "monthly": "Mensual",
-        "yearly": "Anual"
-    }
-    eventos_crudos = storage.cargar_eventos()
-    eventos_formateados = []
-
-    for ev in eventos_crudos:
-        fecha_mostrar = ev.get("proxima_fecha", ev.get("fecha", ""))
-        repite = ev.get("repite", "none")
-        repite_label = mapa_repite.get(repite, "Una vez")
-        try:
-            dt = datetime.date.fromisoformat(fecha_mostrar)
-            fecha_corta = f"{dt.day} {meses_cortos[dt.month]}"
-            fecha_larga = f"{dt.day} de {meses_largos[dt.month]} de {dt.year}"
-        except Exception:
-            fecha_corta = fecha_mostrar
-            fecha_larga = fecha_mostrar
-
-        if repite == "daily":
-            etiqueta_lateral = f"Diario · {ev.get('hora_inicio', '09:00')}"
-        else:
-            etiqueta_lateral = f"{fecha_corta} · {ev.get('hora_inicio', '09:00')}"
-
-        eventos_formateados.append({
-            "id": ev.get("id"),
-            "titulo": ev.get("titulo", "Evento"),
-            "fecha": fecha_mostrar,
-            "hora_inicio": ev.get("hora_inicio", "09:00"),
-            "hora_fin": ev.get("hora_fin", "09:30"),
-            "repite": repite,
-            "repite_label": repite_label,
-            "etiqueta_lateral": etiqueta_lateral,
-            "fecha_corta": fecha_corta,
-            "fecha_larga": fecha_larga
-        })
-
-    return eventos_formateados
-
-def _construir_semana_datos(referencia_date=None, sincronizar=True):
-    ahora = datetime.datetime.now()
-    hoy_date = ahora.date()
-    ref_date = referencia_date if referencia_date else hoy_date
-    linea_roja_top = ahora.hour * 60 + ahora.minute if ref_date == hoy_date else 0
-    
-    nombres_dias = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"]
-    meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    
-    # Calcular la semana centrada en la fecha de referencia
-    inicio_semana = ref_date - datetime.timedelta(days=ref_date.weekday())
-    
-    if sincronizar and ref_date == hoy_date:
-        sincronizar_semana_con_google(inicio_semana)
-        
-    historial = storage.cargar_historial()
-    
-    semana_datos = []
-    for i in range(7):
-        d_actual = inicio_semana + datetime.timedelta(days=i)
-        d_iso = d_actual.isoformat()
-        es_hoy = (d_actual == hoy_date)
-        
-        tareas_brutas = storage.TAREAS_HOY if es_hoy else historial.get(d_iso, {}).get("tareas", [])
-        eventos_fijos_dia = storage.obtener_eventos_del_dia(d_iso)
-        bloques_procesados = []
-        
-        for idx_real, t in enumerate(tareas_brutas):
-            try:
-                h_ini, m_ini = map(int, t['hora_inicio'].split(':'))
-                h_fin, m_fin = map(int, t['hora_fin'].split(':'))
-                top_px = h_ini * 60 + m_ini
-                height_px = max((h_fin * 60 + m_fin) - top_px, 15)
-                t_proc = t.copy()
-                t_proc['top'] = top_px
-                t_proc['height'] = height_px
-                t_proc['es_evento'] = False
-                t_proc['task_index'] = idx_real
-                bloques_procesados.append(t_proc)
-            except Exception:
-                pass
-
-        for ev in eventos_fijos_dia:
-            try:
-                h_ini, m_ini = map(int, ev['hora_inicio'].split(':'))
-                h_fin, m_fin = map(int, ev['hora_fin'].split(':'))
-                top_px = h_ini * 60 + m_ini
-                height_px = max((h_fin * 60 + m_fin) - top_px, 15)
-                ev_proc = ev.copy()
-                ev_proc['top'] = top_px
-                ev_proc['height'] = height_px
-                ev_proc['es_evento'] = True
-                ev_proc['task_index'] = -1
-                bloques_procesados.append(ev_proc)
-            except Exception:
-                pass
-
-        bloques_procesados.sort(key=lambda x: x['top'])
-        semana_datos.append({
-            "fecha_iso": d_iso,
-            "nombre": nombres_dias[d_actual.weekday()],
-            "numero": d_actual.day,
-            "es_hoy": es_hoy,
-            "bloques": bloques_procesados
-        })
-        
-    mes_titulo = f"{meses[ref_date.month]} {ref_date.year}"
-    return semana_datos, linea_roja_top, mes_titulo
-
-@calendario_bp.route('/calendario/datos_semana')
-def datos_semana_json():
-    fecha_str = request.args.get('fecha')
-    ref_date = datetime.date.fromisoformat(fecha_str) if fecha_str else datetime.date.today()
-    semana_datos, linea_roja_top, mes_titulo = _construir_semana_datos(referencia_date=ref_date, sincronizar=(ref_date == datetime.date.today()))
-    dias_dict = {dia["fecha_iso"]: dia["bloques"] for dia in semana_datos}
-    todos_eventos = _formatear_eventos_para_vista()
-    return jsonify({
-        "linea_roja_top": linea_roja_top,
-        "mes_anio_titulo": mes_titulo,
-        "dias": dias_dict,
-        "semana_datos": semana_datos,
-        "eventos_lista": todos_eventos
-    })
-
-@calendario_bp.route('/calendario/crear_evento', methods=['POST'])
-def crear_evento_fijo():
-    data = request.get_json()
-    nuevo_evento = {
-        "id": f"ev_{uuid.uuid4().hex[:8]}",
-        "titulo": data.get('titulo', 'Evento'),
-        "fecha": data.get('fecha', datetime.date.today().isoformat()),
-        "hora_inicio": data.get('hora_inicio', '09:00'),
-        "hora_fin": data.get('hora_fin', '09:30'),
-        "repite": data.get('repite', 'none'),
-        "google_event_id": None
-    }
-    try:
-        g_id = agregar_evento_fijo_calendario(nuevo_evento)
-        if g_id: nuevo_evento["google_event_id"] = g_id
-    except Exception as e:
-        print(f"⚠️ Error: {e}")
-    eventos = storage.cargar_eventos_raw()
-    eventos.append(nuevo_evento)
-    storage.guardar_eventos_raw(eventos)
-    return jsonify({"status": "ok"})
-
-def _obtener_lista_dia(fecha_iso, historial):
-    hoy_iso = datetime.date.today().isoformat()
-    if fecha_iso == hoy_iso:
-        return storage.TAREAS_HOY
-    if fecha_iso not in historial:
-        historial[fecha_iso] = {"score": 0, "tareas": []}
-    return historial[fecha_iso]["tareas"]
-
-def recalcular_dia_historial(fecha_iso):
-    """
-    Recalcula el porcentaje de rendimiento (score) para cualquier fecha.
-    Si es hoy, usa TAREAS_HOY; si es otra fecha, lo busca en history.json.
-    """
-    hoy_str = datetime.date.today().isoformat()
-    
-    if fecha_iso == hoy_str:
-        storage.recalcular_rendimiento()
-        return
-
-    historial = storage.cargar_historial()
-    if fecha_iso in historial and "tareas" in historial[fecha_iso]:
-        lista = historial[fecha_iso]["tareas"]
-        if lista:
-            completadas = sum(1 for t in lista if t.get("completado"))
-            historial[fecha_iso]["score"] = completadas / len(lista)
-        else:
-            del historial[fecha_iso]
-        storage.guardar_historial(historial)
-    
-@calendario_bp.route('/calendario/eliminar_evento', methods=['POST'])
-def eliminar_evento_fijo_ruta():
-    data = request.get_json()
-    ev_id = data.get('id')
-    eventos = storage.cargar_eventos_raw()
-    restantes, evento_borrado = [], None
-    for ev in eventos:
-        if ev.get('id') == ev_id: evento_borrado = ev
-        else: restantes.append(ev)
-    storage.guardar_eventos_raw(restantes)
-    if evento_borrado and evento_borrado.get("google_event_id"):
-        try: eliminar_evento_calendario(evento_borrado["google_event_id"])
-        except Exception: pass
-    return jsonify({"status": "ok"})
-
-@calendario_bp.route('/calendario/crear_tarea', methods=['POST'])
-def crear_tarea_calendario():
-    data = request.get_json()
-    fecha_iso = data.get('fecha_iso')
-    nueva_tarea = {"hora_inicio": data.get('hora_inicio'), "hora_fin": data.get('hora_fin'), "tarea": data.get('tarea'), "tipo": data.get('tipo', 'estudio'), "completado": False, "google_event_id": None}
-    try:
-        ids = agregar_eventos_al_calendario([nueva_tarea], fecha_iso=fecha_iso)
-        if ids: nueva_tarea["google_event_id"] = ids[0]
-    except Exception: pass
-
-    hoy_iso = datetime.date.today().isoformat()
-    if fecha_iso == hoy_iso:
-        storage.TAREAS_HOY.append(nueva_tarea)
-        storage.TAREAS_HOY.sort(key=lambda x: x['hora_inicio'])
-        storage.recalcular_rendimiento()
-    else:
-        historial = storage.cargar_historial()
-        lista = _obtener_lista_dia(fecha_iso, historial)
-        lista.append(nueva_tarea)
-        lista.sort(key=lambda x: x['hora_inicio'])
-        storage.recalcular_dia_historial(fecha_iso, historial)
-        storage.guardar_historial(historial)
-    return jsonify({"status": "ok"})
-
-@calendario_bp.route('/calendario/mover_tarea', methods=['POST'])
-def mover_tarea_calendario():
-    data = request.get_json()
-    fecha_iso = data.get('fecha_iso')
-    idx = int(data.get('index', -1))
-    nueva_ini, nueva_fin = data.get('hora_inicio'), data.get('hora_fin')
-    hoy_iso = datetime.date.today().isoformat()
-    tarea_objetivo = None
-
-    if fecha_iso == hoy_iso:
-        if 0 <= idx < len(storage.TAREAS_HOY):
-            tarea_objetivo = storage.TAREAS_HOY[idx]
-            tarea_objetivo['hora_inicio'], tarea_objetivo['hora_fin'] = nueva_ini, nueva_fin
-            storage.recalcular_rendimiento()
-    else:
-        historial = storage.cargar_historial()
-        lista = _obtener_lista_dia(fecha_iso, historial)
-        if 0 <= idx < len(lista):
-            tarea_objetivo = lista[idx]
-            tarea_objetivo['hora_inicio'], tarea_objetivo['hora_fin'] = nueva_ini, nueva_fin
-            storage.guardar_historial(historial)
-
-    if tarea_objetivo:
-        try:
-            nuevo_id = actualizar_evento_calendario(tarea_objetivo.get("google_event_id"), tarea_objetivo, fecha_iso=fecha_iso)
-            if nuevo_id: tarea_objetivo["google_event_id"] = nuevo_id
-        except Exception: pass
-    return jsonify({"status": "ok"})
-
-@calendario_bp.route('/calendario/editar_tarea', methods=['POST'])
-def editar_tarea_calendario():
-    data = request.get_json()
-    fecha_iso = data.get('fecha_iso')
-    idx = int(data.get('index', -1))
-    hoy_iso = datetime.date.today().isoformat()
-    tarea_objetivo = None
-
-    if fecha_iso == hoy_iso:
-        if 0 <= idx < len(storage.TAREAS_HOY):
-            t = storage.TAREAS_HOY[idx]
-            t['tarea'], t['tipo'], t['hora_inicio'], t['hora_fin'], t['completado'] = data.get('tarea', t['tarea']), data.get('tipo', t.get('tipo', 'estudio')), data.get('hora_inicio', t['hora_inicio']), data.get('hora_fin', t['hora_fin']), bool(data.get('completado', t.get('completado', False)))
-            tarea_objetivo = t
-    else:
-        historial = storage.cargar_historial()
-        lista = _obtener_lista_dia(fecha_iso, historial)
-        if 0 <= idx < len(lista):
-            t = lista[idx]
-            t['tarea'], t['tipo'], t['hora_inicio'], t['hora_fin'], t['completado'] = data.get('tarea', t['tarea']), data.get('tipo', t.get('tipo', 'estudio')), data.get('hora_inicio', t['hora_inicio']), data.get('hora_fin', t['hora_fin']), bool(data.get('completado', t.get('completado', False)))
-            tarea_objetivo = t
-
-    if tarea_objetivo:
-        try:
-            nuevo_id = actualizar_evento_calendario(tarea_objetivo.get("google_event_id"), tarea_objetivo, fecha_iso=fecha_iso)
-            if nuevo_id: tarea_objetivo["google_event_id"] = nuevo_id
-        except Exception: pass
-
-    if fecha_iso == hoy_iso:
-        storage.TAREAS_HOY.sort(key=lambda x: x['hora_inicio'])
-        storage.recalcular_rendimiento()
-    else:
-        historial = storage.cargar_historial()
-        lista = _obtener_lista_dia(fecha_iso, historial)
-        lista.sort(key=lambda x: x['hora_inicio'])
-        storage.recalcular_dia_historial(fecha_iso, historial)
-        storage.guardar_historial(historial)
-    return jsonify({"status": "ok"})
-
-@calendario_bp.route('/calendario/eliminar_tarea', methods=['POST'])
-def eliminar_tarea_calendario():
-    data = request.get_json()
-    fecha_iso = data.get('fecha_iso')
-    idx = int(data.get('index', -1))
-    hoy_iso = datetime.date.today().isoformat()
-    tarea_a_borrar = None
-
-    if fecha_iso == hoy_iso:
-        if 0 <= idx < len(storage.TAREAS_HOY):
-            tarea_a_borrar = storage.TAREAS_HOY.pop(idx)
-            storage.recalcular_rendimiento()
-    else:
-        historial = storage.cargar_historial()
-        lista = _obtener_lista_dia(fecha_iso, historial)
-        if 0 <= idx < len(lista):
-            tarea_a_borrar = lista.pop(idx)
-            storage.recalcular_dia_historial(fecha_iso, historial)
-            storage.guardar_historial(historial)
-
-    if tarea_a_borrar and tarea_a_borrar.get("google_event_id"):
-        try: eliminar_evento_calendario(tarea_a_borrar["google_event_id"])
-        except Exception: pass
-    return jsonify({"status": "ok"})
-
-@calendario_bp.route('/calendario')
-def vista_calendario():
-    hoy_date = datetime.date.today()
-    semana_datos, linea_roja_top, mes_titulo = _construir_semana_datos(referencia_date=hoy_date, sincronizar=True)
-    meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-
-    horas_etiquetas = [("12 AM" if h == 0 else f"{h} AM" if h < 12 else "12 PM" if h == 12 else f"{h-12} PM") for h in range(24)]
-    todos_eventos = _formatear_eventos_para_vista()
-
-    html = render_template_string(
-        CALENDARIO_HTML,
-        semana_datos=semana_datos,
-        horas_etiquetas=horas_etiquetas,
-        linea_roja_top=linea_roja_top,
-        mes_actual=meses[hoy_date.month],
-        mes_num=hoy_date.month,
-        anio_actual=hoy_date.year,
-        dia_hoy_num=hoy_date.day,
-        hoy_iso=hoy_date.isoformat(),
-        primeros_eventos=todos_eventos[:5],
-        todos_eventos=todos_eventos,
-        hay_mas_eventos=len(todos_eventos) > 5
-    )
-    return render_layout(html, css_extra="calendario.css")

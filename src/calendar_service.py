@@ -1,5 +1,10 @@
+# ==========================================
+# IMPORTACIONES Y CONFIGURACIÓN
+# ==========================================
+
 import os
 import datetime
+import threading
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -10,6 +15,23 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 TOKEN_FILE = os.path.join(BASE_DIR, 'token.json')
+
+_google_lock = threading.Lock()
+
+
+# ==========================================
+# EJECUCIÓN EN SEGUNDO PLANO
+# ==========================================
+
+def _ejecutar_en_segundo_plano(func, *args, **kwargs):
+    hilo = threading.Thread(target=func, args=args, kwargs=kwargs)
+    hilo.daemon = True
+    hilo.start()
+
+
+# ==========================================
+# AUTENTICACIÓN Y CLIENTE DE GOOGLE
+# ==========================================
 
 def obtener_servicio():
     creds = None
@@ -36,6 +58,7 @@ def obtener_servicio():
 
     return build('calendar', 'v3', credentials=creds)
 
+
 def _construir_fechas_rfc3339(fecha_iso, hora_inicio, hora_fin):
     tz_local = datetime.datetime.now().astimezone().tzinfo
     dt_ini = datetime.datetime.strptime(f"{fecha_iso} {hora_inicio}", "%Y-%m-%d %H:%M").replace(tzinfo=tz_local)
@@ -43,6 +66,7 @@ def _construir_fechas_rfc3339(fecha_iso, hora_inicio, hora_fin):
     if dt_fin <= dt_ini:
         dt_fin = dt_ini + datetime.timedelta(minutes=15)
     return dt_ini.isoformat(), dt_fin.isoformat()
+
 
 def obtener_eventos_de_hoy():
     service = obtener_servicio()
@@ -66,8 +90,12 @@ def obtener_eventos_de_hoy():
         lineas.append(f"- {start}: {event.get('summary', 'Sin título')}")
     return "\n".join(lineas)
 
+
+# ==========================================
+# MANEJO DE TAREAS EN GOOGLE CALENDAR
+# ==========================================
+
 def agregar_eventos_al_calendario(lista_tareas, fecha_iso=None):
-    """Crea tareas normales en Google Calendar en color AZUL (colorId: '9')."""
     service = obtener_servicio()
     if not fecha_iso:
         fecha_iso = datetime.date.today().isoformat()
@@ -77,7 +105,7 @@ def agregar_eventos_al_calendario(lista_tareas, fecha_iso=None):
         ini_iso, fin_iso = _construir_fechas_rfc3339(fecha_iso, t['hora_inicio'], t['hora_fin'])
         evento = {
             'summary': t['tarea'],
-            'colorId': '9',  # Azul para tareas normales
+            'colorId': '9',
             'start': {'dateTime': ini_iso},
             'end': {'dateTime': fin_iso},
             'extendedProperties': {
@@ -85,15 +113,113 @@ def agregar_eventos_al_calendario(lista_tareas, fecha_iso=None):
             }
         }
         creado = service.events().insert(calendarId='primary', body=evento).execute()
-        nuevo_id = creado.get('id')
-        ids_creados.append(nuevo_id)
+        ids_creados.append(creado.get('id'))
     return ids_creados
 
+
+def actualizar_evento_calendario(event_id, tarea_dict, fecha_iso=None):
+    if not fecha_iso:
+        fecha_iso = datetime.date.today().isoformat()
+
+    if not event_id or event_id == "PENDING":
+        ids = agregar_eventos_al_calendario([tarea_dict], fecha_iso=fecha_iso)
+        return ids[0] if ids else None
+
+    service = obtener_servicio()
+    ini_iso, fin_iso = _construir_fechas_rfc3339(fecha_iso, tarea_dict['hora_inicio'], tarea_dict['hora_fin'])
+    cuerpo = {
+        'summary': tarea_dict['tarea'],
+        'colorId': '9',
+        'start': {'dateTime': ini_iso},
+        'end': {'dateTime': fin_iso},
+    }
+    service.events().patch(calendarId='primary', eventId=event_id, body=cuerpo).execute()
+    return event_id
+
+
+def eliminar_evento_calendario(event_id):
+    if not event_id or event_id == "PENDING":
+        return
+    service = obtener_servicio()
+    service.events().delete(calendarId='primary', eventId=event_id).execute()
+
+
+def _guardar_google_id_en_storage(fecha_iso, tarea_ref, g_id):
+    tarea_ref["google_event_id"] = g_id
+    hoy_iso = datetime.date.today().isoformat()
+    if fecha_iso == hoy_iso:
+        storage.recalcular_rendimiento()
+    else:
+        historial = storage.cargar_historial()
+        if fecha_iso in historial:
+            tid = tarea_ref.get("id")
+            for t in historial[fecha_iso].get("tareas", []):
+                if (tid and t.get("id") == tid) or (
+                    t.get("google_event_id") == "PENDING"
+                    and t.get("tarea") == tarea_ref.get("tarea")
+                ):
+                    t["google_event_id"] = g_id
+                    break
+            storage.guardar_historial(historial)
+
+
+def sincronizar_tarea_creada_async(tarea_ref, fecha_iso):
+    def _worker():
+        with _google_lock:
+            try:
+                ids = agregar_eventos_al_calendario([tarea_ref], fecha_iso=fecha_iso)
+                g_id = ids[0] if ids else None
+                _guardar_google_id_en_storage(fecha_iso, tarea_ref, g_id)
+            except Exception as e:
+                tarea_ref["google_event_id"] = None
+                print(f"⚠️ Error creando tarea en Google: {e}")
+
+    _ejecutar_en_segundo_plano(_worker)
+
+
+def sincronizar_tarea_actualizada_async(tarea_ref, fecha_iso):
+    def _worker():
+        with _google_lock:
+            try:
+                ev_id = tarea_ref.get("google_event_id")
+                if not ev_id or ev_id == "PENDING":
+                    hoy_iso = datetime.date.today().isoformat()
+                    if fecha_iso != hoy_iso:
+                        historial = storage.cargar_historial()
+                        tid = tarea_ref.get("id")
+                        for t in historial.get(fecha_iso, {}).get("tareas", []):
+                            if tid and t.get("id") == tid:
+                                ev_id = t.get("google_event_id")
+                                break
+
+                nuevo_id = actualizar_evento_calendario(ev_id, tarea_ref, fecha_iso=fecha_iso)
+                if nuevo_id and nuevo_id != ev_id:
+                    _guardar_google_id_en_storage(fecha_iso, tarea_ref, nuevo_id)
+            except Exception as e:
+                print(f"⚠️ Error actualizando tarea en Google: {e}")
+
+    _ejecutar_en_segundo_plano(_worker)
+
+
+def eliminar_evento_calendario_async(event_id):
+    if not event_id or event_id == "PENDING":
+        return
+
+    def _worker():
+        with _google_lock:
+            try:
+                eliminar_evento_calendario(event_id)
+            except Exception as e:
+                print(f"⚠️ Error eliminando en Google: {e}")
+
+    _ejecutar_en_segundo_plano(_worker)
+
+
+# ==========================================
+# MANEJO DE EVENTOS FIJOS EN GOOGLE CALENDAR
+# ==========================================
+
 def agregar_evento_fijo_calendario(evento_dict):
-    """
-    Crea un Evento Fijo ('Mis Eventos') en Google Calendar en color VERDE (colorId: '10')
-    y con su regla de repetición (RRULE) si aplica.
-    """
     service = obtener_servicio()
     fecha_iso = evento_dict.get('fecha', datetime.date.today().isoformat())
     ini_iso, fin_iso = _construir_fechas_rfc3339(
@@ -102,7 +228,6 @@ def agregar_evento_fijo_calendario(evento_dict):
         evento_dict.get('hora_fin', '09:30')
     )
 
-    # Obtener la zona horaria IANA del calendario del usuario (necesaria para eventos recurrentes en Google)
     try:
         cal_meta = service.calendars().get(calendarId='primary').execute()
         tz_iana = cal_meta.get('timeZone', 'Europe/Madrid')
@@ -111,7 +236,7 @@ def agregar_evento_fijo_calendario(evento_dict):
 
     cuerpo = {
         'summary': evento_dict['titulo'],
-        'colorId': '10',  # Verde (Albahaca) en Google Calendar para Eventos
+        'colorId': '10',
         'start': {'dateTime': ini_iso, 'timeZone': tz_iana},
         'end': {'dateTime': fin_iso, 'timeZone': tz_iana},
         'extendedProperties': {
@@ -132,173 +257,52 @@ def agregar_evento_fijo_calendario(evento_dict):
     creado = service.events().insert(calendarId='primary', body=cuerpo).execute()
     return creado.get('id')
 
-def actualizar_evento_calendario(event_id, tarea_dict, fecha_iso=None):
-    if not fecha_iso:
-        fecha_iso = datetime.date.today().isoformat()
 
-    if not event_id:
-        ids = agregar_eventos_al_calendario([tarea_dict], fecha_iso=fecha_iso)
-        return ids[0] if ids else None
+def sincronizar_evento_fijo_creado_async(evento_dict):
+    def _worker():
+        with _google_lock:
+            try:
+                g_id = agregar_evento_fijo_calendario(evento_dict)
+                if not g_id:
+                    return
+                eventos = storage.cargar_eventos_raw()
+                for ev in eventos:
+                    if ev.get("id") == evento_dict.get("id"):
+                        ev["google_event_id"] = g_id
+                        break
+                storage.guardar_eventos_raw(eventos)
+            except Exception as e:
+                print(f"⚠️ Error sincronizando evento fijo con Google: {e}")
 
-    service = obtener_servicio()
-    ini_iso, fin_iso = _construir_fechas_rfc3339(fecha_iso, tarea_dict['hora_inicio'], tarea_dict['hora_fin'])
-    cuerpo = {
-        'summary': tarea_dict['tarea'],
-        'colorId': '9',
-        'start': {'dateTime': ini_iso},
-        'end': {'dateTime': fin_iso},
-    }
-    service.events().patch(calendarId='primary', eventId=event_id, body=cuerpo).execute()
-    return event_id
+    _ejecutar_en_segundo_plano(_worker)
 
-def eliminar_evento_calendario(event_id):
-    if not event_id:
-        return
-    service = obtener_servicio()
-    service.events().delete(calendarId='primary', eventId=event_id).execute()
+
+
+# ==========================================
+# ESPEJO DE DÍA COMPLETO (PARA PESTAÑA INICIO)
+# ==========================================
+
+def reemplazar_dia_en_google_async(fecha_iso, ids_anteriores, nuevas_tareas_ref):
+    def _worker():
+        with _google_lock:
+            for old_id in ids_anteriores:
+                if old_id and old_id != "PENDING":
+                    try:
+                        eliminar_evento_calendario(old_id)
+                    except Exception:
+                        pass
+
+            for tarea in nuevas_tareas_ref:
+                try:
+                    ids = agregar_eventos_al_calendario([tarea], fecha_iso=fecha_iso)
+                    g_id = ids[0] if ids else None
+                    _guardar_google_id_en_storage(fecha_iso, tarea, g_id)
+                except Exception as e:
+                    tarea["google_event_id"] = None
+                    print(f"⚠️ Error subiendo tarea de rutina a Google: {e}")
+
+    _ejecutar_en_segundo_plano(_worker)
+
 
 def sincronizar_semana_con_google(inicio_semana_date):
-    try:
-        service = obtener_servicio()
-    except Exception as e:
-        print(f"⚠️ No se pudo conectar a Google Calendar para sincronizar: {e}")
-        return
-
-    tz_local = datetime.datetime.now().astimezone().tzinfo
-    hoy_iso = datetime.date.today().isoformat()
-    historial = storage.cargar_historial()
-
-    # 0. Asegurar que todos los Eventos Fijos ('Mis Eventos') estén subidos a Google Calendar en verde
-    eventos_fijos_raw = storage.cargar_eventos_raw()
-    eventos_modificados = False
-    ids_eventos_fijos = set()
-
-    for ev_fijo in eventos_fijos_raw:
-        if not ev_fijo.get("google_event_id"):
-            try:
-                g_id = agregar_evento_fijo_calendario(ev_fijo)
-                if g_id:
-                    ev_fijo["google_event_id"] = g_id
-                    eventos_modificados = True
-            except Exception as e:
-                print(f"⚠️ Error subiendo evento fijo a Google: {e}")
-        if ev_fijo.get("google_event_id"):
-            ids_eventos_fijos.add(ev_fijo["google_event_id"])
-
-    if eventos_modificados:
-        storage.guardar_eventos_raw(eventos_fijos_raw)
-
-    # 1. Subir cualquier tarea normal que no tenga google_event_id todavía
-    for i in range(7):
-        d_iso = (inicio_semana_date + datetime.timedelta(days=i)).isoformat()
-        locales = storage.TAREAS_HOY if d_iso == hoy_iso else historial.get(d_iso, {}).get("tareas", [])
-        for t in locales:
-            if not t.get("google_event_id"):
-                try:
-                    ids = agregar_eventos_al_calendario([t], fecha_iso=d_iso)
-                    if ids:
-                        t["google_event_id"] = ids[0]
-                except Exception as e:
-                    print(f"⚠️ Error subiendo tarea local a Google: {e}")
-
-    # 2. Descargar eventos de la semana desde Google Calendar
-    fin_semana_date = inicio_semana_date + datetime.timedelta(days=7)
-    time_min = datetime.datetime.combine(inicio_semana_date, datetime.time.min, tzinfo=tz_local).isoformat()
-    time_max = datetime.datetime.combine(fin_semana_date, datetime.time.min, tzinfo=tz_local).isoformat()
-
-    try:
-        events_result = service.events().list(
-            calendarId='primary',
-            timeMin=time_min,
-            timeMax=time_max,
-            singleEvents=True,
-            orderBy='startTime'
-        ).execute()
-        items = events_result.get('items', [])
-    except Exception as e:
-        print(f"⚠️ Error al leer eventos de Google Calendar: {e}")
-        return
-
-    eventos_google_por_dia = {
-        (inicio_semana_date + datetime.timedelta(days=i)).isoformat(): []
-        for i in range(7)
-    }
-
-    for ev in items:
-        if ev.get('status') == 'cancelled':
-            continue
-
-        # Ignorar los Eventos Fijos para que no se conviertan en tareas móviles
-        ev_id = ev.get('id', '')
-        recurring_id = ev.get('recurringEventId', '')
-        tipo_privado = ev.get('extendedProperties', {}).get('private', {}).get('tipo_elemento')
-        if (
-            tipo_privado == 'evento_fijo' or
-            ev_id in ids_eventos_fijos or
-            recurring_id in ids_eventos_fijos or
-            ev.get('colorId') == '10'
-        ):
-            continue
-
-        start_raw = ev.get('start', {}).get('dateTime')
-        end_raw = ev.get('end', {}).get('dateTime')
-        if not start_raw or not end_raw:
-            continue
-
-        if start_raw.endswith('Z'):
-            start_raw = start_raw[:-1] + '+00:00'
-        if end_raw.endswith('Z'):
-            end_raw = end_raw[:-1] + '+00:00'
-
-        dt_ini = datetime.datetime.fromisoformat(start_raw).astimezone(tz_local)
-        dt_fin = datetime.datetime.fromisoformat(end_raw).astimezone(tz_local)
-        d_iso = dt_ini.date().isoformat()
-
-        if d_iso in eventos_google_por_dia:
-            eventos_google_por_dia[d_iso].append({
-                "google_event_id": ev_id,
-                "tarea": ev.get('summary', 'Sin título'),
-                "hora_inicio": dt_ini.strftime("%H:%M"),
-                "hora_fin": dt_fin.strftime("%H:%M")
-            })
-
-    # 3. Fusionar tareas normales conservando 'tipo' y 'completado'
-    for d_iso, lista_google in eventos_google_por_dia.items():
-        locales = storage.TAREAS_HOY if d_iso == hoy_iso else historial.get(d_iso, {}).get("tareas", [])
-        mapa_locales_id = {t.get("google_event_id"): t for t in locales if t.get("google_event_id")}
-
-        nueva_lista_dia = []
-        for g_ev in lista_google:
-            g_id = g_ev["google_event_id"]
-            if g_id in mapa_locales_id:
-                tarea_existente = mapa_locales_id[g_id]
-                tarea_existente["tarea"] = g_ev["tarea"]
-                tarea_existente["hora_inicio"] = g_ev["hora_inicio"]
-                tarea_existente["hora_fin"] = g_ev["hora_fin"]
-                nueva_lista_dia.append(tarea_existente)
-            else:
-                nueva_lista_dia.append({
-                    "hora_inicio": g_ev["hora_inicio"],
-                    "hora_fin": g_ev["hora_fin"],
-                    "tarea": g_ev["tarea"],
-                    "tipo": "estudio",
-                    "completado": False,
-                    "google_event_id": g_id
-                })
-
-        nueva_lista_dia.sort(key=lambda x: x["hora_inicio"])
-
-        if d_iso == hoy_iso:
-            storage.TAREAS_HOY = nueva_lista_dia
-            storage.recalcular_rendimiento()
-        else:
-            if nueva_lista_dia:
-                completadas = sum(1 for t in nueva_lista_dia if t.get("completado"))
-                historial[d_iso] = {
-                    "score": completadas / len(nueva_lista_dia),
-                    "tareas": nueva_lista_dia
-                }
-            elif d_iso in historial:
-                del historial[d_iso]
-
-    storage.guardar_historial(historial)
+    pass

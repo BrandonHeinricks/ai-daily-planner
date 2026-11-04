@@ -1,0 +1,261 @@
+/* ==========================================
+   CONTENEDOR PRINCIPAL Y CABECERA
+   ========================================== */
+
+.stats-page-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 28px 24px 50px;
+    max-width: 1280px;
+    margin: 0 auto;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.stats-header h2 {
+    font-size: 20px;
+    font-weight: 500;
+    color: #24292e;
+    margin: 0;
+}
+
+.stats-body-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 24px;
+}
+
+/* ==========================================
+   TARJETA DEL MAPA DE CALOR (ANCHO AMPLIADO)
+   ========================================== */
+
+.stats-card {
+    background-color: #ffffff;
+    border: 1px solid #e1e4e8;
+    border-radius: 10px;
+    padding: 24px 28px;
+    width: 100%;
+    max-width: 1020px; /* <-- Ancho ideal para que quepan las 53 semanas sin scroll */
+    box-sizing: border-box;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.stats-grid-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-x: hidden; /* <-- Evita que aparezca la barra de desplazamiento horizontal */
+}
+
+.stats-months-row {
+    display: grid;
+    grid-template-columns: repeat(53, 1fr); /* <-- Distribuye los meses exactamente sobre las 53 columnas */
+    padding-left: 38px;
+    font-size: 12px;
+    color: #586069;
+    height: 18px;
+    position: relative;
+}
+
+.stats-months-row span {
+    white-space: nowrap;
+    transform: translateX(-4px);
+}
+
+.stats-grid-body {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.stats-weekdays-col {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 129px;
+    font-size: 12px;
+    color: #586069;
+    width: 30px;
+}
+
+.stats-squares-grid {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+    justify-content: space-between;
+}
+
+.stats-column-week {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Celdas ampliadas en escala de grises y negro puro */
+.stats-square {
+    width: 15px;
+    height: 15px;
+    border-radius: 3px;
+    background-color: #ebedf0;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.stats-square:hover {
+    transform: scale(1.18);
+}
+
+.stats-square.is-selected {
+    outline: 2px solid #111111;
+    outline-offset: 1px;
+}
+
+.stats-square.level-1 { background-color: #c6c6c6; }
+.stats-square.level-2 { background-color: #8c8c8c; }
+.stats-square.level-3 { background-color: #525252; }
+.stats-square.level-4 { background-color: #000000; }
+
+.stats-footer-legend {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 18px;
+    font-size: 13px;
+    color: #586069;
+    border-top: 1px solid #eaecef;
+    padding-top: 14px;
+}
+
+.legend-scale {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.legend-scale .stats-square {
+    cursor: default;
+}
+
+.legend-scale .stats-square:hover {
+    transform: none;
+}
+
+/* ==========================================
+   SELECTOR DE AÑOS LATERAL
+   ========================================== */
+
+.stats-years-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 75px;
+}
+
+.year-btn {
+    display: block;
+    padding: 8px 14px;
+    font-size: 13px;
+    text-align: center;
+    text-decoration: none;
+    color: #586069;
+    border-radius: 6px;
+    background-color: transparent;
+    font-weight: 500;
+}
+
+.year-btn:hover {
+    background-color: #f1f3f5;
+}
+
+.year-btn.active {
+    background-color: #111111;
+    color: #ffffff;
+}
+
+/* ==========================================
+   SECCIÓN DE TARTA / ANILLO DE RENDIMIENTO
+   ========================================== */
+
+.stats-donut-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 12px;
+    padding: 28px 20px 36px;
+    background-color: #ffffff;
+    border: 1px solid #e1e4e8;
+    border-radius: 10px;
+    max-width: 1020px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.stats-donut-date-badge {
+    font-size: 13px;
+    color: #6a737d;
+    letter-spacing: 0.4px;
+    margin-bottom: 4px;
+}
+
+.stats-donut-wrapper {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    justify-content: center;
+}
+
+.stats-donut-svg {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.donut-center-subtitle {
+    font-size: 15px;
+    fill: #4a4a4a;
+    font-weight: 400;
+}
+
+.donut-center-score {
+    font-size: 46px;
+    fill: #1f1f1f;
+    font-weight: 400;
+}
+
+.donut-pct-label {
+    font-size: 14px;
+    fill: #24292e;
+    font-weight: 400;
+}
+
+.stats-donut-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 36px;
+    margin-top: 10px;
+}
+
+.donut-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 16px;
+    color: #24292e;
+}
+
+.donut-dot {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.dot-carrera  { background-color: #5B7D9A; }
+.dot-descanso { background-color: #C2746E; }
+.dot-salud    { background-color: #C7AC63; }
+.dot-propios  { background-color: #6D987A; }
